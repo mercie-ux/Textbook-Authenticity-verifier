@@ -18,13 +18,13 @@
     // Mock blockchain verification API (simulated)
     const mockBlockchainAPI = {
       verifyTextbook: async (qrCode) => {
-        // Mock database of valid QR codes
+        console.log("Verifying QR code:", qrCode); // Debug log
         const validQRCodes = {
-          "TEXTBOOK123": { title: "Mathematics Grade 10", publisher: "Kenya Publishers", status: "Authentic" },
-          "TEXTBOOK456": { title: "Science Grade 12", publisher: "Nairobi Books", status: "Authentic" },
+          "TEXTBOOK123": { title: "Mathematics Grade 10", publisher: "Kenya Publishers", status: "Authentic", isbn: "978-3-16-148410-0" },
+          "TEXTBOOK456": { title: "Science Grade 12", publisher: "Nairobi Books", status: "Authentic", isbn: "978-1-23-456789-7" },
         };
         await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulate network delay
-        return validQRCodes[qrCode] || { status: "Counterfeit", message: "Invalid QR code" };
+        return validQRCodes[qrCode] || { status: "Counterfeit", message: "Invalid or unrecognized QR code", isbn: "N/A" };
       },
       reportCounterfeit: async (qrCode, details) => {
         await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulate network delay
@@ -38,6 +38,8 @@
       const [verificationResult, setVerificationResult] = useState(null);
       const [reportForm, setReportForm] = useState({ qrCode: "", details: "" });
       const [reportStatus, setReportStatus] = useState(null);
+      const [manualQrCode, setManualQrCode] = useState("");
+      const [errorMessage, setErrorMessage] = useState("");
 
       // Initialize QR code scanner
       useEffect(() => {
@@ -48,25 +50,54 @@
               { facingMode: "environment" },
               { fps: 10, qrbox: { width: 250, height: 250 } },
               async (decodedText) => {
-                // Verify QR code
+                console.log("QR code scanned:", decodedText); // Debug log
                 const result = await mockBlockchainAPI.verifyTextbook(decodedText);
                 setVerificationResult(result);
                 setQrScannerActive(false);
-                html5QrCode.stop();
+                html5QrCode.stop().catch((err) => console.log("QR scanner stop error:", err));
               },
-              (error) => console.log("QR scan error:", error)
+              (error) => {
+                console.log("QR scan error:", error);
+                setErrorMessage("Failed to scan QR code. Ensure camera access is enabled.");
+              }
             )
-            .catch((err) => console.log("QR scanner start error:", err));
+            .catch((err) => {
+              console.log("QR scanner start error:", err);
+              setErrorMessage("Unable to start QR scanner. Please check camera permissions or use manual input.");
+              setQrScannerActive(false);
+            });
           return () => html5QrCode.stop().catch((err) => console.log("QR scanner stop error:", err));
         }
       }, [qrScannerActive]);
 
+      // Handle manual QR code verification
+      const handleManualVerify = async () => {
+        if (!manualQrCode) {
+          setErrorMessage("Please enter a QR code.");
+          return;
+        }
+        const result = await mockBlockchainAPI.verifyTextbook(manualQrCode);
+        setVerificationResult(result);
+        setErrorMessage("");
+      };
+
       // Handle report submission
       const handleReportSubmit = async (e) => {
         e.preventDefault();
+        if (!reportForm.qrCode && !reportForm.details) {
+          setErrorMessage("Please provide a QR code or details for the report.");
+          return;
+        }
         const result = await mockBlockchainAPI.reportCounterfeit(reportForm.qrCode, reportForm.details);
         setReportStatus(result);
         setReportForm({ qrCode: "", details: "" });
+        setErrorMessage("");
+      };
+
+      // Reset verification result
+      const resetVerification = () => {
+        setVerificationResult(null);
+        setErrorMessage("");
       };
 
       return (
@@ -75,25 +106,53 @@
 
           {/* QR Code Scanner Section */}
           <div className="w-full max-w-md bg-white p-6 rounded-lg shadow-md mb-4">
-            <h2 className="text-lg font-semibold mb-2">Scan QR Code</h2>
+            <h2 className="text-lg font-semibold mb-2">Verify Textbook</h2>
             {!qrScannerActive ? (
-              <button
-                onClick={() => setQrScannerActive(true)}
-                className="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600"
-              >
-                Start QR Scanner
-              </button>
+              <>
+                <button
+                  onClick={() => setQrScannerActive(true)}
+                  className="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 mb-2"
+                >
+                  Start QR Scanner
+                </button>
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700">Manual QR Code Input</label>
+                  <input
+                    type="text"
+                    value={manualQrCode}
+                    onChange={(e) => setManualQrCode(e.target.value)}
+                    className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter QR code (e.g., TEXTBOOK123)"
+                  />
+                  <button
+                    onClick={handleManualVerify}
+                    className="w-full bg-green-500 text-white py-2 px-4 rounded hover:bg-green-600 mt-2"
+                  >
+                    Verify Manually
+                  </button>
+                </div>
+              </>
             ) : (
               <div id="qr-reader" className="w-full h-64"></div>
+            )}
+            {errorMessage && (
+              <div className="mt-4 p-4 rounded bg-red-100 text-red-600">{errorMessage}</div>
             )}
             {verificationResult && (
               <div className="mt-4 p-4 rounded bg-gray-100">
                 <p className="font-semibold">
                   Status: <span className={verificationResult.status === "Authentic" ? "text-green-600" : "text-red-600"}>{verificationResult.status}</span>
                 </p>
-                {verificationResult.title && <p>Title: {verificationResult.title}</p>}
-                {verificationResult.publisher && <p>Publisher: {verificationResult.publisher}</p>}
+                <p>Title: {verificationResult.title || "N/A"}</p>
+                <p>Publisher: {verificationResult.publisher || "N/A"}</p>
+                <p>ISBN: {verificationResult.isbn || "N/A"}</p>
                 {verificationResult.message && <p>Message: {verificationResult.message}</p>}
+                <button
+                  onClick={resetVerification}
+                  className="mt-2 bg-gray-500 text-white py-1 px-3 rounded hover:bg-gray-600"
+                >
+                  Clear Result
+                </button>
               </div>
             )}
           </div>
